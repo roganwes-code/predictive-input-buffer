@@ -148,28 +148,3 @@ $on_mod(Loaded) {
     log::info("[InputBuffer] Starting Mode: STAGE 1 (2 All / 2 Wave)");
     log::info("[InputBuffer] Press F6 in-level to cycle: 2/2 -> 4/4 -> 8/8 -> 16/8 -> OFF");
 }
-class $modify(PIBPlayLayer, PlayLayer) {
-    void resetLevel() {
-        // Vaciar la cola al reiniciar para no filtrar inputs entre intentos
-        static_cast<PIBBaseGameLayer*>(static_cast<GJBaseGameLayer*>(this))
-            ->m_fields->queue.clear();
-        PlayLayer::resetLevel();
-    }
-};
-
-class $modify(PIBKeyboard, CCKeyboardDispatcher) {
-    bool dispatchKeyboardMSG(enumKeyCodes key, bool down, bool repeat, double timestamp) {
-        if (down && !repeat && key == KEY_F6) {
-            pib::g_stage = (pib::g_stage + 1) % 5;
-            pib::logStage();
-            return true;
-        }
-        return CCKeyboardDispatcher::dispatchKeyboardMSG(key, down, repeat, timestamp);
-    }
-};
-
-$on_mod(Loaded) {
-    log::info("[InputBuffer] v4.7 LOADED (Zero-Lag + Up Arrow Fix)");
-    log::info("[InputBuffer] Starting Mode: STAGE 1 (2 All / 2 Wave)");
-    log::info("[InputBuffer] Press F6 in-level to cycle: 2/2 -> 4/4 -> 8/8 -> 16/8 -> OFF");
-}
