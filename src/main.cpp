@@ -49,6 +49,7 @@ class $modify(PIBBaseGameLayer, GJBaseGameLayer) {
     struct Fields {
         std::deque<PendingInput> queue;
         bool applying = false;
+        bool stepRan = false; // true si processCommands corrio desde el ultimo frame
     };
 
     void handleButton(bool down, int button, bool isPlayer1) {
@@ -75,12 +76,12 @@ class $modify(PIBBaseGameLayer, GJBaseGameLayer) {
         }
     }
 
-    // Se llama una vez por paso de fisica: aqui descontamos ticks.
-   void processCommands(float dt, bool isHalfTick, bool isLastTick) {
+    // Descuenta ticks de la cola y aplica los inputs que ya cumplieron su espera.
+    void tickQueue(int ticks) {
         auto f = m_fields.self();
 
         for (auto it = f->queue.begin(); it != f->queue.end();) {
-            it->remaining -= 1;
+            it->remaining -= ticks;
             if (it->remaining <= 0) {
                 f->applying = true;
                 GJBaseGameLayer::handleButton(it->down, it->button, it->player1);
@@ -90,11 +91,63 @@ class $modify(PIBBaseGameLayer, GJBaseGameLayer) {
                 ++it;
             }
         }
+    }
 
-   GJBaseGameLayer::processCommands(dt, isHalfTick, isLastTick);
+    // Se llama una vez por paso de fisica: aqui descontamos ticks.
+    void processCommands(float dt, bool isHalfTick, bool isLastTick) {
+        auto f = m_fields.self();
+        f->stepRan = true;
+        tickQueue(1);
+        GJBaseGameLayer::processCommands(dt, isHalfTick, isLastTick);
+    }
+
+    void update(float dt) {
+        auto f = m_fields.self();
+
+        // Respaldo: si processCommands no corrio desde el ultimo frame
+        // (puede pasar en algunas plataformas), liberar los inputs segun
+        // el tiempo transcurrido para que nunca se queden atrapados.
+        if (!f->queue.empty() && !f->stepRan) {
+            static bool warned = false;
+            if (!warned) {
+                warned = true;
+                log::warn("[InputBuffer] processCommands did not run, using backup timing");
+            }
+            int t = (int)(dt * 240.f);
+            if (t < 1) t = 1;
+            tickQueue(t);
+        }
+        f->stepRan = false;
+
+        GJBaseGameLayer::update(dt);
     }
 };
 
+class $modify(PIBPlayLayer, PlayLayer) {
+    void resetLevel() {
+        // Vaciar la cola al reiniciar para no filtrar inputs entre intentos
+        static_cast<PIBBaseGameLayer*>(static_cast<GJBaseGameLayer*>(this))
+            ->m_fields->queue.clear();
+        PlayLayer::resetLevel();
+    }
+};
+
+class $modify(PIBKeyboard, CCKeyboardDispatcher) {
+    bool dispatchKeyboardMSG(enumKeyCodes key, bool down, bool repeat, double timestamp) {
+        if (down && !repeat && key == KEY_F6) {
+            pib::g_stage = (pib::g_stage + 1) % 5;
+            pib::logStage();
+            return true;
+        }
+        return CCKeyboardDispatcher::dispatchKeyboardMSG(key, down, repeat, timestamp);
+    }
+};
+
+$on_mod(Loaded) {
+    log::info("[InputBuffer] v4.7 LOADED (Zero-Lag + Up Arrow Fix)");
+    log::info("[InputBuffer] Starting Mode: STAGE 1 (2 All / 2 Wave)");
+    log::info("[InputBuffer] Press F6 in-level to cycle: 2/2 -> 4/4 -> 8/8 -> 16/8 -> OFF");
+}
 class $modify(PIBPlayLayer, PlayLayer) {
     void resetLevel() {
         // Vaciar la cola al reiniciar para no filtrar inputs entre intentos
